@@ -18,6 +18,9 @@ let webcamFiles = {};
 let remotePolling = {};
 let globalPeer = null;
 
+// ===================== IDENTITY / SETTINGS SYSTEM =====================
+
+// Always show role picker on every page load
 window.onload = () => {
     showSettingsModal();
     showSetupStep('role');
@@ -47,6 +50,23 @@ async function syncUserToServer(identity) {
     } catch (e) { }
 }
 
+// ===== WhatsApp Support =====
+function openWaSupport(role) {
+    const supportNumber = '6281234567890';
+    const msg = role === 'seller'
+        ? `Halo, saya seller di Smart Store (ID: ${loggedInUser?.username}). Butuh bantuan.`
+        : `Halo, saya buyer di Smart Store (ID: ${loggedInUser?.username}). Butuh bantuan.`;
+    window.open(`https://wa.me/${supportNumber}?text=${encodeURIComponent(msg)}`, '_blank');
+}
+
+function openWaSeller(phone, sellerName) {
+    if (!phone) { alert('Seller has not provided a WhatsApp number.'); return; }
+    const clean = phone.replace(/\D/g, '');
+    const msg = `Halo ${sellerName}, saya ingin bertanya tentang pesanan di Smart Store.`;
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(msg)}`, '_blank');
+}
+
+// ===== TOP UP =====
 function openTopupModal() {
     if (!loggedInUser) return;
     document.getElementById('topup-current-balance').textContent =
@@ -61,7 +81,6 @@ function closeTopupModal() {
     m.classList.add('ss-hidden');
 }
 function setTopupAmount(v) { document.getElementById('topup-amount').value = v; }
-
 async function submitTopup() {
     const amount = parseInt(document.getElementById('topup-amount').value || 0);
     const errEl = document.getElementById('topup-error');
@@ -95,6 +114,7 @@ async function submitTopup() {
     btn.disabled = false;
 }
 
+// ===== WITHDRAW =====
 function openWithdrawModal() {
     if (!loggedInUser) return;
     const fmt = v => 'Rp ' + parseInt(v).toLocaleString('id-ID');
@@ -221,6 +241,7 @@ function updateHeaders() {
     }
 }
 
+// ---- Settings Modal controls ----
 function showSettingsModal() {
     const modal = document.getElementById('settings-modal');
     modal.classList.remove('ss-hidden');
@@ -341,6 +362,17 @@ async function saveSellerSetup(e) {
     loggedInUser = identity;
     initApp();
 }
+
+function logout() {
+    localStorage.removeItem(BUYER_KEY);
+    localStorage.removeItem(SELLER_KEY);
+    loggedInUser = null;
+    location.reload();
+}
+
+// ===================== END IDENTITY SYSTEM =====================
+
+function completeLogin() { initApp(); }
 
 function toggleHistory() {
     currentView !== 'history' ? switchView('history') : switchView(activeRole);
@@ -505,6 +537,7 @@ function renderAuction(offers) {
     container.appendChild(label);
 
     offers.forEach(o => {
+        // Native HTML rendering with FontAwesome icon fix
         const imgTag = o.image_path
             ? `<img src="${o.image_path}" style="width:80px;height:80px;object-fit:cover;border-radius:12px;flex-shrink:0;box-shadow:0 2px 10px rgba(0,0,0,0.12);">`
             : `<div style="width:80px;height:80px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#FFF0E5;color:#F4A261;font-size:1.6rem;"><i class="fas fa-utensils"></i></div>`;
@@ -512,6 +545,10 @@ function renderAuction(offers) {
         const displayName = o.seller_display_name || o.seller_name || 'Seller';
         const bankInfoSafe = o.bank_info ? o.bank_info.replace(/'/g, "\\'") : "Ask seller for bank details";
         const sellerPhoneSafe = (o.seller_phone || '').replace(/\D/g, '');
+
+        // Native WhatsApp link to avoid popup blockers and apostrophe syntax errors
+        const waMessage = encodeURIComponent(`Halo ${displayName}, saya ingin bertanya tentang pesanan di Smart Store.`);
+        const waUrl = sellerPhoneSafe ? `https://wa.me/${sellerPhoneSafe}?text=${waMessage}` : `javascript:alert('Seller has not provided a WhatsApp number.')`;
 
         const card = document.createElement('div');
         card.className = 'auction-card';
@@ -531,16 +568,16 @@ function renderAuction(offers) {
                     onmouseover="this.style.background='#21867A'" onmouseout="this.style.background='#2A9D8F'">
                     <i class="fas fa-wallet"></i> Pay with Balance
                 </button>
-                <button onclick="openReceiptModal(${o.id}, '${displayName}', '${bankInfoSafe}', ${o.price})"
+                <button onclick="openReceiptModal(${o.id}, '${displayName.replace(/'/g, "\\'")}', '${bankInfoSafe}', ${o.price})"
                     style="flex:1;min-width:100px;background:#E63946;color:white;font-weight:700;font-size:0.78rem;padding:9px 10px;border-radius:11px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;"
                     onmouseover="this.style.background='#C1121F'" onmouseout="this.style.background='#E63946'">
                     <i class="fas fa-qrcode"></i> QRIS / Cash
                 </button>
-                <button onclick="openWaSeller('${sellerPhoneSafe}', '${displayName}')"
-                    style="background:#25D366;color:white;font-weight:700;font-size:0.78rem;padding:9px 12px;border-radius:11px;border:none;cursor:pointer;display:flex;align-items:center;gap:5px;"
+                <a href="${waUrl}" target="_blank"
+                    style="background:#25D366;color:white;font-weight:700;font-size:0.78rem;padding:9px 12px;border-radius:11px;border:none;cursor:pointer;display:flex;align-items:center;gap:5px;text-decoration:none;"
                     title="Chat seller via WhatsApp">
                     <i class="fab fa-whatsapp"></i>
-                </button>
+                </a>
             </div>`;
         container.appendChild(card);
     });
