@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Live Phone Camera</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="text-center mb-4">
+        <h1 class="text-xl font-bold text-emerald-400"><i class="fas fa-camera"></i> Smart Store Remote</h1>
+        <p class="text-gray-400 text-xs mt-1">Aim at the food and snap!</p>
+    </div>
+
+    <div id="video-container"
+        class="relative w-full max-w-sm aspect-[3/4] bg-black rounded-2xl overflow-hidden border-2 border-emerald-500/30 shadow-lg shadow-emerald-500/20 mb-6 flex items-center justify-center">
+        <div id="loading-cam" class="absolute inset-0 flex flex-col items-center justify-center text-emerald-400/50">
+            <i class="fas fa-circle-notch fa-spin text-3xl mb-2"></i>
+            <span class="text-xs">Starting Camera...</span>
+        </div>
+        <video id="camera-feed" autoplay playsinline class="w-full h-full object-cover z-10"></video>
+        <canvas id="capture-canvas" class="hidden"></canvas>
+    </div>
+
+    <button id="snap-btn" onclick="takeAndSendPhoto()"
+        class="bg-emerald-500 text-black font-bold text-lg px-8 py-4 rounded-full shadow-lg shadow-emerald-500/30 active:scale-95 transition flex items-center gap-3 hidden">
+        <i class="fas fa-camera"></i> Snap & Beam
+    </button>
+
+    <div id="status" class="mt-6 font-bold text-center hidden"></div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const reqId = urlParams.get('req');
+        const peerId = urlParams.get('peer');
+
+        const video = document.getElementById('camera-feed');
+        const canvas = document.getElementById('capture-canvas');
+        const snapBtn = document.getElementById('snap-btn');
+        const statusDiv = document.getElementById('status');
+        const videoContainer = document.getElementById('video-container');
+
+        let stream = null;
+        let peer = null;
+
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1280 } }
+                });
+                video.srcObject = stream;
+                document.getElementById('loading-cam').classList.add('hidden');
+                snapBtn.classList.remove('hidden');
+
+                if (peerId) {
+                    peer = new Peer();
+                    peer.on('open', () => {
+                        peer.call(peerId, stream);
+                        statusDiv.innerHTML = '<p class="text-emerald-400 text-xs mt-2"><i class="fas fa-wifi animate-pulse"></i> Streaming live to laptop...</p>';
+                        statusDiv.classList.remove('hidden');
+                    });
+                }
+            } catch (err) {
+                document.getElementById('loading-cam').classList.add('hidden');
+                statusDiv.classList.remove('hidden');
+                statusDiv.innerHTML = '<p class="text-red-400"><i class="fas fa-exclamation-triangle"></i> Please allow camera access.</p>';
+            }
+        }
+
+        async function takeAndSendPhoto() {
+            if (!reqId || !stream) return;
+
+            snapBtn.classList.add('hidden');
+            statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin text-emerald-400 text-3xl"></i><p class="mt-4 text-emerald-400">Beaming photo to laptop...</p>';
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            canvas.toBlob(async (blob) => {
+                const file = new File([blob], `remote-snap-${Date.now()}.jpg`, { type: 'image/jpeg' });
+                const fd = new FormData();
+                fd.append('action', 'remote_upload');
+                fd.append('request_id', reqId);
+                fd.append('food_image', file);
+
+                try {
+                    const res = await fetch('api.php', { method: 'POST', body: fd });
+                    const data = await res.json();
+
+                    if (data.status === 'success') {
+                        stream.getTracks().forEach(track => track.stop());
+                        if (peer) peer.destroy();
+                        videoContainer.classList.add('hidden');
+                        statusDiv.innerHTML = '<i class="fas fa-check-circle text-emerald-400 text-6xl"></i><p class="mt-4 text-white text-lg">Sent! Look at your laptop.</p>';
+                    }
+                } catch (e) { }
+            }, 'image/jpeg', 0.85);
+        }
+
+        startCamera();
+    </script>
+</body>
+
+</html>

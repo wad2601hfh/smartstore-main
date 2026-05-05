@@ -1,73 +1,367 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Store</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Smart Store — Live Food Auction</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- 🌟 THE FIX: Re-added the PeerJS Library so the Phone Camera works! -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <link rel="stylesheet" href="style.css?v=14">
 </head>
-<body class="bg-gray-950 h-screen w-screen flex flex-col font-sans overflow-hidden text-white">
 
-    <div class="aurora-gradient absolute inset-0 -z-10"></div>
-    <div class="absolute inset-0 bg-black/40 -z-10 backdrop-blur-[80px]"></div>
+<body>
 
-    <div class="flex-1 flex flex-col max-w-4xl mx-auto w-full h-full glass-panel border-x border-white/10 shadow-2xl relative overflow-hidden">
-        
-        <header class="p-4 flex justify-between items-center bg-black/40 border-b border-white/10 z-20 shrink-0 backdrop-blur-md">
-            <h1 class="text-xl font-bold flex items-center gap-2 tracking-wide neon-text">
-                <i class="fas fa-bolt text-emerald-400"></i> Smart Store
-            </h1>
-            <div class="flex gap-2">
-                <button id="btn-history" onclick="toggleHistory()" class="bg-white/10 px-4 py-1.5 rounded-full text-xs font-bold hover:bg-white/20 transition">
-                    <i class="fas fa-history"></i> History
+    <!-- ===== SETTINGS MODAL ===== -->
+    <div id="settings-modal" class="ss-modal ss-hidden">
+
+        <!-- Step: Role Picker -->
+        <div id="setup-role" class="ss-modal-inner ss-hidden">
+            <div class="ss-card ss-text-center auth-slide-in">
+                <div style="font-size:3rem; margin-bottom:16px;">🛒</div>
+                <h2 style="font-size:1.5rem; font-weight:800; color:#1e293b; margin:0 0 4px;">Smart Store</h2>
+                <p style="color:#9CA3AF; font-size:0.9rem; margin:0 0 24px;">Who are you today?</p>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <button onclick="pickRole('buyer')" class="buyer-btn"
+                        style="width:100%; padding:16px; border-radius:16px; font-weight:700; font-size:1rem; color:white; display:flex; align-items:center; justify-content:center; gap:12px; border:none; cursor:pointer;">
+                        <i class="fas fa-shopping-bag"></i> I'm a Buyer
+                    </button>
+                    <button onclick="pickRole('seller')" class="seller-btn"
+                        style="width:100%; padding:16px; border-radius:16px; font-weight:700; font-size:1rem; color:white; display:flex; align-items:center; justify-content:center; gap:12px; border:none; cursor:pointer;">
+                        <i class="fas fa-store"></i> I'm a Seller
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step: Buyer Setup -->
+        <div id="setup-buyer" class="ss-modal-inner ss-hidden">
+            <div class="ss-card ss-text-center auth-slide-in">
+                <div style="font-size:2.5rem; margin-bottom:12px;"><i class="fas fa-shopping-bag"
+                        style="color:#f97316;"></i></div>
+                <h2 style="font-size:1.4rem; font-weight:800; color:#1e293b; margin:0 0 4px;" id="buyer-setup-title">
+                    Buyer Setup</h2>
+                <p style="color:#9CA3AF; font-size:0.85rem; margin:0 0 20px;">Set your identity to start ordering.</p>
+                <form id="buyer-setup-form" onsubmit="saveBuyerSetup(event)"
+                    style="text-align:left; display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label class="ss-form-label">Your Name <span
+                                style="color:#f97316; font-weight:400; text-transform:none;">(shown to sellers — used as
+                                your ID)</span></label>
+                        <input type="text" name="display_name" id="buyer-name" placeholder="e.g. John Doe" required
+                            class="cookie-input" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="ss-form-label">WhatsApp Number <span
+                                style="color:#9CA3AF; font-weight:400; text-transform:none;">(so sellers can reach
+                                you)</span></label>
+                        <input type="text" name="phone" placeholder="628123456789 (with country code)" required
+                            class="cookie-input">
+                    </div>
+                    <div id="buyer-setup-error" class="ss-error ss-hidden"></div>
+                    <button type="submit" id="buyer-setup-btn" class="cookie-btn-buyer"
+                        style="width:100%; padding:14px; border-radius:16px; font-weight:700; font-size:1rem; color:white;">
+                        <i class="fas fa-bolt" style="margin-right:4px;"></i> Save &amp; Start Ordering
+                    </button>
+                </form>
+                <button onclick="goBackSetup()" id="buyer-back-btn" class="ss-back-btn ss-hidden">← Back</button>
+            </div>
+        </div>
+
+        <!-- Step: Seller Setup -->
+        <div id="setup-seller" class="ss-modal-inner ss-hidden">
+            <div class="ss-card ss-text-center auth-slide-in">
+                <div style="font-size:2.5rem; margin-bottom:12px;"><i class="fas fa-store" style="color:#1D3557;"></i>
+                </div>
+                <h2 style="font-size:1.4rem; font-weight:800; color:#1e293b; margin:0 0 4px;" id="seller-setup-title">
+                    Shop Setup</h2>
+                <p style="color:#9CA3AF; font-size:0.85rem; margin:0 0 20px;">Your shop info appears on every offer.</p>
+                <form id="seller-setup-form" onsubmit="saveSellerSetup(event)"
+                    style="text-align:left; display:flex; flex-direction:column; gap:12px;">
+                    <div>
+                        <label class="ss-form-label">Shop Name <span
+                                style="color:#2A9D8F; font-weight:400; text-transform:none;">(shown to buyers — used as
+                                your ID)</span></label>
+                        <input type="text" name="display_name" id="seller-shopname" placeholder="e.g. Warung Budi"
+                            required class="cookie-input" autocomplete="off">
+                    </div>
+                    <div>
+                        <label class="ss-form-label">WhatsApp Number</label>
+                        <input type="text" name="phone" placeholder="628123456789 (with country code)" required
+                            class="cookie-input">
+                    </div>
+                    <div>
+                        <label class="ss-form-label">Bank / E-wallet Account</label>
+                        <input type="text" name="bank_info" placeholder="BCA 1234567890" required class="cookie-input">
+                    </div>
+                    <div id="seller-setup-error" class="ss-error ss-hidden"></div>
+                    <button type="submit" id="seller-setup-btn" class="cookie-btn-seller"
+                        style="width:100%; padding:14px; border-radius:16px; font-weight:700; font-size:1rem; color:white;">
+                        <i class="fas fa-rocket" style="margin-right:4px;"></i> Save &amp; Start Selling
+                    </button>
+                </form>
+                <button onclick="goBackSetup()" id="seller-back-btn" class="ss-back-btn ss-hidden">← Back</button>
+            </div>
+        </div>
+
+    </div>
+    <!-- ===== END SETTINGS MODAL ===== -->
+
+    <!-- ===== TOP UP MODAL ===== -->
+    <div id="topup-modal" class="ss-modal ss-hidden" style="z-index:1060;">
+        <div class="ss-modal-card auth-slide-in">
+            <div style="background:linear-gradient(135deg,#f97316,#ea580c); padding:20px; text-align:center;">
+                <div style="font-size:2rem; margin-bottom:4px;"><i class="fas fa-wallet" style="color:white;"></i></div>
+                <div style="color:white; font-weight:800; font-size:1.1rem;">Top Up Wallet</div>
+                <div style="color:rgba(255,255,255,0.8); font-size:0.8rem; margin-top:2px;">Current Balance: <span
+                        id="topup-current-balance" style="font-weight:800; color:white;">Rp 0</span></div>
+            </div>
+            <div style="padding:20px;">
+                <div style="margin-bottom:14px;">
+                    <label class="form-label">Top Up Amount (Rp)</label>
+                    <input type="number" id="topup-amount" placeholder="e.g. 50000" min="10000" step="10000"
+                        class="form-input" style="font-size:1rem; font-weight:700;">
+                    <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+                        <button onclick="setTopupAmount(20000)" class="topup-quick-btn">20K</button>
+                        <button onclick="setTopupAmount(50000)" class="topup-quick-btn">50K</button>
+                        <button onclick="setTopupAmount(100000)" class="topup-quick-btn">100K</button>
+                        <button onclick="setTopupAmount(200000)" class="topup-quick-btn">200K</button>
+                    </div>
+                </div>
+                <div
+                    style="background:#EFF6FF; border:1.5px solid #BFDBFE; border-radius:12px; padding:12px; margin-bottom:14px; text-align:center;">
+                    <p style="font-size:0.75rem; color:#1D4ED8; font-weight:700;"><i class="fas fa-circle-info"
+                            style="margin-right:4px;"></i>Demo Mode</p>
+                    <p style="font-size:0.7rem; color:#3B82F6; margin-top:3px;">Balance is added instantly for testing.
+                        No real payment needed.</p>
+                </div>
+                <div id="topup-error" class="ss-error ss-hidden" style="margin-bottom:10px;"></div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="closeTopupModal()"
+                        style="flex:1; background:#F3F4F6; color:#6B7280; font-weight:700; padding:12px; border-radius:12px; border:none; cursor:pointer;">Cancel</button>
+                    <button onclick="submitTopup()" id="topup-submit-btn"
+                        style="flex:2; background:linear-gradient(135deg,#f97316,#ea580c); color:white; font-weight:800; padding:12px; border-radius:12px; border:none; cursor:pointer; font-size:0.9rem;">
+                        <i class="fas fa-paper-plane" style="margin-right:4px;"></i> Submit Top Up
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ===== END TOP UP MODAL ===== -->
+
+    <!-- ===== WITHDRAW MODAL ===== -->
+    <div id="withdraw-modal" class="ss-modal ss-hidden" style="z-index:1060;">
+        <div class="ss-modal-card auth-slide-in">
+            <div style="background:linear-gradient(135deg,#1D3557,#2B4A7A); padding:20px; text-align:center;">
+                <div style="font-size:2rem; margin-bottom:4px;"><i class="fas fa-hand-holding-usd"
+                        style="color:white;"></i></div>
+                <div style="color:white; font-weight:800; font-size:1.1rem;">Withdraw Earnings</div>
+                <div style="color:rgba(255,255,255,0.8); font-size:0.8rem; margin-top:2px;">Available: <span
+                        id="withdraw-available" style="font-weight:800; color:#4ECDC4;">Rp 0</span></div>
+            </div>
+            <div style="padding:20px;">
+                <div
+                    style="background:#F0FDF4; border:1.5px solid #A7F3D0; border-radius:12px; padding:14px; margin-bottom:14px;">
+                    <p
+                        style="font-size:0.72rem; color:#065F46; font-weight:700; text-transform:uppercase; margin-bottom:4px;">
+                        <i class="fas fa-university" style="margin-right:4px;"></i>Withdraw to Your Account
+                    </p>
+                    <p style="font-size:1rem; font-weight:800; color:#1D3557;" id="withdraw-bank-info">-</p>
+                </div>
+                <div style="margin-bottom:14px;">
+                    <label class="form-label">Withdraw Amount (Rp)</label>
+                    <input type="number" id="withdraw-amount" placeholder="Enter amount" min="10000" class="form-input"
+                        style="font-size:1rem; font-weight:700;">
+                    <button onclick="setWithdrawMax()"
+                        style="font-size:0.72rem; color:#2A9D8F; font-weight:700; background:none; border:none; cursor:pointer; margin-top:4px;"><i
+                            class="fas fa-arrow-up" style="margin-right:4px;"></i>Withdraw All</button>
+                </div>
+                <div id="withdraw-error" class="ss-error ss-hidden" style="margin-bottom:10px;"></div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="closeWithdrawModal()"
+                        style="flex:1; background:#F3F4F6; color:#6B7280; font-weight:700; padding:12px; border-radius:12px; border:none; cursor:pointer;">Cancel</button>
+                    <button onclick="submitWithdraw()" id="withdraw-submit-btn"
+                        style="flex:2; background:linear-gradient(135deg,#2A9D8F,#21867A); color:white; font-weight:800; padding:12px; border-radius:12px; border:none; cursor:pointer; font-size:0.9rem;">
+                        <i class="fas fa-check" style="margin-right:4px;"></i> Request Withdrawal
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ===== END WITHDRAW MODAL ===== -->
+
+    <div class="ss-main-panel glass-panel">
+
+        <!-- BUYER HEADER (orange) -->
+        <header id="buyer-header" class="ss-header ss-hidden buyer-header-bg">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div class="ss-header-icon-wrap">
+                    <i class="fas fa-shopping-cart" style="color:white; font-size:0.9rem;"></i>
+                </div>
+                <div>
+                    <h1 style="font-size:0.9rem; font-weight:700; color:white; margin:0; line-height:1.2;"
+                        id="buyer-header-name">Smart Store</h1>
+                    <div style="font-size:0.65rem; color:rgba(255,255,255,0.7);">Live food auction</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <div id="buyer-balance-chip" onclick="openTopupModal()"
+                    style="height:32px; padding:0 10px; border-radius:20px; background:rgba(255,255,255,0.22); border:1.5px solid rgba(255,255,255,0.4); color:white; font-size:0.7rem; font-weight:700; display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap;">
+                    <i class="fas fa-wallet"></i> <span id="buyer-balance-text">Rp 0</span>
+                </div>
+                <button onclick="switchToRole('seller')" class="switch-role-btn seller-switch-btn"
+                    title="Switch to Seller">
+                    <i class="fas fa-store"></i> Seller
                 </button>
-                <button id="toggle-role-btn" onclick="toggleRole()" class="role-btn px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-300">
-                    Switch to Seller
+                <button onclick="toggleHistory()" class="header-icon-btn" title="Order History" id="btn-history">
+                    <i class="fas fa-clock-rotate-left"></i>
+                </button>
+                <button onclick="openSettings()" class="header-icon-btn" title="Settings">
+                    <i class="fas fa-gear"></i>
                 </button>
             </div>
         </header>
 
-        <div id="buyer-view" class="flex-1 flex flex-col min-h-0 relative">
-            <main id="chat-area" class="flex-1 p-5 overflow-y-auto space-y-4 scroll-smooth">
-                <div class="bot-msg message-bubble slide-in">
-                    <div class="text-xs text-emerald-400 font-bold mb-1 tracking-wider">ASSISTANT</div>
-                    <p>Welcome! Type what you're craving (e.g., "2 nasi goreng"). We'll use your location to find nearby sellers.</p>
+        <!-- SELLER HEADER (trust blue) -->
+        <header id="seller-header" class="ss-header ss-hidden seller-header-bg">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div class="ss-header-icon-wrap">
+                    <i class="fas fa-store" style="color:white; font-size:0.9rem;"></i>
+                </div>
+                <div>
+                    <h1 style="font-size:0.9rem; font-weight:700; color:white; margin:0; line-height:1.2;"
+                        id="seller-header-name">Seller Center</h1>
+                    <div style="font-size:0.65rem; color:rgba(255,255,255,0.7);">Real-time order dashboard</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <div id="seller-earnings-chip" onclick="openWithdrawModal()"
+                    style="height:32px; padding:0 10px; border-radius:20px; background:rgba(42,157,143,0.35); border:1.5px solid rgba(42,157,143,0.6); color:white; font-size:0.7rem; font-weight:700; display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap;">
+                    <i class="fas fa-coins"></i> <span id="seller-earnings-text">Rp 0</span>
+                </div>
+                <button onclick="switchToRole('buyer')" class="switch-role-btn buyer-switch-btn"
+                    title="Switch to Buyer">
+                    <i class="fas fa-shopping-bag"></i> Buyer
+                </button>
+                <button onclick="toggleHistory()" class="header-icon-btn" title="Order History">
+                    <i class="fas fa-receipt"></i>
+                </button>
+                <button onclick="openSettings()" class="header-icon-btn" title="Settings">
+                    <i class="fas fa-gear"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- BUYER VIEW -->
+        <div id="buyer-view" class="ss-flex-col ss-hidden">
+            <main id="chat-area" class="ss-chat-area">
+                <div class="bot-msg message-bubble">
+                    <div
+                        style="font-size:0.75rem; font-weight:800; margin-bottom:4px; letter-spacing:0.1em; color:#F4A261;">
+                        <i class="fas fa-bolt" style="margin-right:4px;"></i>SMART STORE</div>
+                    <p style="color:#374151; margin:0;">Welcome! Type what you're craving (e.g., "2 nasi goreng"). We'll
+                        find nearby sellers for you.</p>
                 </div>
             </main>
-            
-            <div id="finish-btn-container" class="hidden px-4 pb-3 bg-black/60 backdrop-blur-md">
-                <button onclick="closeRequest()" class="w-full bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500 hover:text-white font-bold py-2.5 rounded-xl text-sm transition-all duration-300 active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50">
-                    <i class="fas fa-times-circle"></i> Cancel Request
+
+            <div id="finish-btn-container" class="ss-hidden"
+                style="padding:12px 16px; background:#fff8f5; border-top:1px solid #FFE0CC;">
+                <button onclick="closeRequest()" class="ss-cancel-btn">
+                    <i class="fas fa-xmark"></i> Cancel Request
                 </button>
             </div>
 
-            <footer class="p-4 bg-black/80 border-t border-white/10 shrink-0 backdrop-blur-lg">
-                <form onsubmit="event.preventDefault(); sendRequest();" class="flex gap-3">
-                    <input type="text" id="user-input" placeholder="I'm craving..." class="flex-1 bg-white/5 text-white px-5 py-3 rounded-2xl border border-white/10 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-all placeholder:text-gray-500 disabled:opacity-50">
-                    <button type="submit" id="send-btn" class="bg-gradient-to-r from-emerald-500 to-teal-500 text-black px-6 rounded-2xl font-bold hover:shadow-lg hover:shadow-emerald-500/30 active:scale-95 transition-all duration-200 flex items-center justify-center min-w-[60px] disabled:opacity-50 disabled:cursor-not-allowed">
+            <footer style="padding:16px; border-top:1.5px solid #FFE0CC; background:#fff8f5; flex-shrink:0;">
+                <form onsubmit="event.preventDefault(); sendRequest();" style="display:flex; gap:12px;">
+                    <input type="text" id="user-input" placeholder="I'm craving..." class="ss-chat-input">
+                    <button type="submit" id="send-btn" class="ss-send-btn">
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </form>
             </footer>
         </div>
 
-        <div id="seller-container" class="hidden flex-1 flex-col min-h-0 bg-black/20">
-            <div id="seller-map" class="h-48 w-full border-b border-emerald-500/20 z-10 bg-gray-900"></div>
-            <div class="p-2 bg-emerald-900/20 text-center shrink-0 border-b border-emerald-500/10">
-                <h2 class="font-bold text-emerald-400 text-[10px] tracking-[0.2em] uppercase">Live Buyer Locations</h2>
+        <!-- SELLER VIEW -->
+        <div id="seller-container" class="ss-flex-col ss-hidden" style="background:#F4F6F8;">
+            <div id="seller-map"
+                style="height:192px; width:100%; z-index:10; background:#EEF2F7; border-bottom:2px solid rgba(29,53,87,0.1); flex-shrink:0;">
             </div>
-            <div id="seller-requests" class="flex-1 overflow-y-auto p-4 space-y-4"></div>
+            <div class="seller-section-header"
+                style="display:flex; align-items:center; justify-content:space-between; padding:8px 16px;">
+                <h2
+                    style="font-size:0.75rem; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#1D3557; margin:0;">
+                    <i class="fas fa-list-check" style="margin-right:4px;"></i>Active Buyer Requests</h2>
+                <button onclick="openMenuManager()"
+                    style="background:linear-gradient(135deg,#1D3557,#2B4A7A);color:white;font-size:0.7rem;font-weight:700;padding:5px 14px;border-radius:20px;border:none;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                    <i class="fas fa-utensils"></i> My Menu
+                </button>
+            </div>
+            <div id="seller-requests"
+                style="flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:16px; background:#F4F6F8;">
+            </div>
         </div>
 
-        <div id="history-container" class="hidden flex-1 flex-col min-h-0 bg-black/20 p-5 overflow-y-auto">
-            <h2 class="text-xl font-bold text-emerald-400 mb-4 border-b border-white/10 pb-2"><i class="fas fa-receipt"></i> Order History</h2>
-            <div id="history-list" class="space-y-3"></div>
+        <!-- ===== SELLER MENU MANAGER MODAL ===== -->
+        <div id="menu-modal" class="ss-modal ss-hidden" style="position:absolute; z-index:1070;">
+            <div class="ss-modal-card" style="max-height:90vh; display:flex; flex-direction:column;">
+                <div
+                    style="background:linear-gradient(135deg,#1D3557,#2B4A7A);padding:20px;text-align:center;flex-shrink:0;">
+                    <div style="font-size:1.5rem;margin-bottom:4px;"><i class="fas fa-utensils"
+                            style="color:white;"></i></div>
+                    <div style="color:white;font-weight:800;font-size:1.1rem;">My Menu</div>
+                    <div style="color:rgba(255,255,255,0.75);font-size:0.75rem;margin-top:2px;">AI will match buyer
+                        orders to your menu</div>
+                </div>
+                <div style="padding:18px;overflow-y:auto;flex:1;">
+                    <div
+                        style="background:#F8FAFC;border:1.5px solid #E2E8F0;border-radius:14px;padding:14px;margin-bottom:14px;">
+                        <p
+                            style="font-size:0.7rem;font-weight:700;color:#1D3557;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
+                            <i class="fas fa-plus" style="margin-right:4px;"></i>Add Menu Item</p>
+                        <div style="display:flex;flex-direction:column;gap:8px;">
+                            <input type="text" id="menu-item-name" placeholder="Item name (e.g. Nasi Goreng)"
+                                class="form-input" style="font-size:0.85rem;">
+                            <input type="number" id="menu-item-price" placeholder="Price (e.g. 15000)"
+                                class="form-input" style="font-size:0.85rem;" min="0">
+                            <button onclick="addMenuItem()"
+                                style="background:linear-gradient(135deg,#1D3557,#2B4A7A);color:white;font-weight:700;padding:10px;border-radius:10px;border:none;cursor:pointer;font-size:0.82rem;display:flex;align-items:center;justify-content:center;gap:5px;">
+                                <i class="fas fa-plus"></i> Add to Menu
+                            </button>
+                        </div>
+                    </div>
+                    <div id="menu-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+                    <div id="menu-empty" style="text-align:center;color:#9CA3AF;font-size:0.8rem;padding:20px;">
+                        <i class="fas fa-bowl-food" style="font-size:1.5rem;display:block;margin-bottom:8px;"></i>No
+                        menu items yet.
+                    </div>
+                </div>
+                <div style="padding:14px;flex-shrink:0;border-top:1.5px solid #F3F4F6;">
+                    <button onclick="closeMenuManager()"
+                        style="width:100%;background:#F3F4F6;color:#6B7280;font-weight:700;padding:12px;border-radius:12px;border:none;cursor:pointer;">Close</button>
+                </div>
+            </div>
         </div>
+        <!-- ===== END SELLER MENU MANAGER MODAL ===== -->
+
+        <!-- HISTORY VIEW -->
+        <div id="history-container" class="ss-flex-col ss-hidden"
+            style="background:#F4F6F8; padding:20px; overflow-y:auto;">
+            <h2
+                style="font-size:1.25rem; font-weight:800; margin:0 0 16px; padding-bottom:8px; border-bottom:1.5px solid rgba(29,53,87,0.12); color:#1D3557;">
+                <i class="fas fa-clock-rotate-left" style="margin-right:8px;"></i>Order History
+            </h2>
+            <div id="history-list" style="display:flex; flex-direction:column; gap:12px;"></div>
+        </div>
+
     </div>
-    <script src="app.js"></script>
+
+    <script src="app.js?v=14"></script>
 </body>
+
 </html>
