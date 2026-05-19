@@ -1,5 +1,5 @@
 const API_URL = 'api.php';
-const BUYER_KEY = 'smartstore_buyer';
+const BUYER_KEY  = 'smartstore_buyer';
 const SELLER_KEY = 'smartstore_seller';
 let loggedInUser = null;
 let activeRole = 'buyer';
@@ -175,12 +175,24 @@ function pickRole(role) {
     }
 }
 
+// 🌟 FIX: Resetting and Clearing DOM properly to prevent double render when switching roles!
 function switchToRole(role) {
     if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
     stopSellerPolling();
     currentRequestId = null;
     lastOffersJSON = "";
-    renderedRequestIds = new Set();
+    
+    // Clear DOM and map to prevent duplicate requests
+    const sellerRequestsList = document.getElementById('seller-requests');
+    if (sellerRequestsList) sellerRequestsList.innerHTML = '';
+    
+    if (map) {
+        for (let id in markers) {
+            map.removeLayer(markers[id]);
+        }
+    }
+    markers = {};
+    renderedRequestIds.clear();
 
     const saved = getSavedIdentity(role);
     if (saved) {
@@ -217,7 +229,7 @@ async function loadWalletData() {
         if (et) et.textContent = fmt(data.earnings || 0);
         loggedInUser._balance = data.balance || 0;
         loggedInUser._earnings = data.earnings || 0;
-    } catch (e) { }
+    } catch (e) {}
 }
 
 function updateHeaders() {
@@ -328,7 +340,7 @@ async function saveBuyerSetup(e) {
     const identity = { username: displayName, display_name: displayName, role: 'buyer', phone: phone, bank_info: '' };
     saveIdentityLocal(identity);
     await syncUserToServer(identity);
-    btn.innerHTML = '<i class="fas fa-bolt mr-1"></i>Save &amp; Start Ordering';
+    btn.innerHTML = '<i class="fas fa-bolt mr-1"></i>Save & Start Ordering';
     btn.disabled = false;
     loggedInUser = identity;
     initApp();
@@ -357,22 +369,11 @@ async function saveSellerSetup(e) {
     const identity = { username: displayName, display_name: displayName, role: 'seller', phone, bank_info: bankInfo };
     saveIdentityLocal(identity);
     await syncUserToServer(identity);
-    btn.innerHTML = '<i class="fas fa-rocket mr-1"></i>Save &amp; Start Selling';
+    btn.innerHTML = '<i class="fas fa-rocket mr-1"></i>Save & Start Selling';
     btn.disabled = false;
     loggedInUser = identity;
     initApp();
 }
-
-function logout() {
-    localStorage.removeItem(BUYER_KEY);
-    localStorage.removeItem(SELLER_KEY);
-    loggedInUser = null;
-    location.reload();
-}
-
-// ===================== END IDENTITY SYSTEM =====================
-
-function completeLogin() { initApp(); }
 
 function toggleHistory() {
     currentView !== 'history' ? switchView('history') : switchView(activeRole);
@@ -537,7 +538,6 @@ function renderAuction(offers) {
     container.appendChild(label);
 
     offers.forEach(o => {
-        // Native HTML rendering with FontAwesome icon fix
         const imgTag = o.image_path
             ? `<img src="${o.image_path}" style="width:80px;height:80px;object-fit:cover;border-radius:12px;flex-shrink:0;box-shadow:0 2px 10px rgba(0,0,0,0.12);">`
             : `<div style="width:80px;height:80px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#FFF0E5;color:#F4A261;font-size:1.6rem;"><i class="fas fa-utensils"></i></div>`;
@@ -545,8 +545,7 @@ function renderAuction(offers) {
         const displayName = o.seller_display_name || o.seller_name || 'Seller';
         const bankInfoSafe = o.bank_info ? o.bank_info.replace(/'/g, "\\'") : "Ask seller for bank details";
         const sellerPhoneSafe = (o.seller_phone || '').replace(/\D/g, '');
-
-        // Native WhatsApp link to avoid popup blockers and apostrophe syntax errors
+        
         const waMessage = encodeURIComponent(`Halo ${displayName}, saya ingin bertanya tentang pesanan di Smart Store.`);
         const waUrl = sellerPhoneSafe ? `https://wa.me/${sellerPhoneSafe}?text=${waMessage}` : `javascript:alert('Seller has not provided a WhatsApp number.')`;
 
@@ -702,6 +701,43 @@ async function confirmTrialPayment(offerId) {
     } catch (err) { alert('Network error.'); }
 }
 
+async function submitReceipt(e, offerId) {
+    e.preventDefault();
+    const btn = document.getElementById('submit-receipt-btn');
+    const fileInput = document.getElementById('receipt-file');
+
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    btn.disabled = true;
+
+    try {
+        const fd = new FormData();
+        fd.append('action', 'accept_offer');
+        fd.append('offer_id', offerId);
+        fd.append('buyer_name', loggedInUser.username);
+
+        if (fileInput.files.length > 0) {
+            const compressedReceipt = await compressImage(fileInput.files[0]);
+            fd.append('receipt_image', compressedReceipt);
+        }
+
+        const res = await fetch(API_URL, { method: 'POST', body: fd });
+        const data = await res.json();
+
+        if (data.status === 'success') {
+            document.getElementById('receipt-modal').remove();
+            resetBuyerState("⏳ Receipt Uploaded! Waiting for Seller to verify your payment.");
+        } else {
+            alert(data.message || "Upload failed.");
+            btn.innerHTML = '<i class="fas fa-upload"></i> Send Proof';
+            btn.disabled = false;
+        }
+    } catch (err) {
+        alert("Network error.");
+        btn.innerHTML = '<i class="fas fa-upload"></i> Send Proof';
+        btn.disabled = false;
+    }
+}
+
 function resetBuyerState(msg) {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = null;
@@ -717,6 +753,7 @@ function resetBuyerState(msg) {
     addMessage(msg, 'bot');
 }
 
+// ===== CHAT HISTORY PER USER =====
 function chatKey(username) { return `smartstore_chat_${username}`; }
 
 function saveChatHistory(username) {
@@ -742,6 +779,7 @@ function restoreChatHistory(username) {
 function clearChatHistory(username) {
     if (username) localStorage.removeItem(chatKey(username));
 }
+// ===== END CHAT HISTORY =====
 
 function addMessage(text, type) {
     const chatArea = document.getElementById('chat-area');
@@ -817,10 +855,10 @@ async function loadSellerRequests() {
                 <div style="padding:16px 18px;border-bottom:1.5px solid rgba(29,53,87,0.07);">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
                         <div style="flex:1;min-width:0;">
-                            <p style="font-weight:800;color:#1D3557;font-size:0.97rem;line-height:1.4;">&ldquo;${req.description}&rdquo;</p>
+                            <p style="font-weight:800;color:#1D3557;font-size:0.97rem;line-height:1.4;">“${req.description}”</p>
                             <p style="font-size:0.7rem;color:#9CA3AF;margin-top:4px;">Requested by: <span style="color:#2A9D8F;font-weight:700;">${displayBuyerName}</span> ${buyerWaBtn}</p>
                         </div>
-                        ${req.location ? `<a href="${mapLink}" target="_blank" style="color:#2A9D8F;font-size:0.72rem;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:3px;text-decoration:none;"><i class="fas fa-map-marker-alt"></i> Map</a>` : ''}
+                        ${req.location ? `<a href="${mapLink}" target="_blank" style="color:#2A9D8F;font-size:0.72rem;font-weight:700;white-space:nowrap;display:flex;align-items:center;gap:3px;text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'"><i class="fas fa-map-marker-alt"></i> Map</a>` : ''}
                     </div>
                     ${parsedHTML}
                 </div>
@@ -1247,7 +1285,7 @@ async function loadHistory() {
 
         let actionButtons = '';
         if (activeRole === 'seller' && order.status === 'pending') {
-            const bPhone = (order.buyer_phone || '').replace(/\D/g, '');
+            const bPhone = (order.buyer_phone || '').replace(/\D/g,'');
             const waLink = bPhone ? `<a href="https://wa.me/${bPhone}?text=${encodeURIComponent('Halo, pesanan Smart Store kamu sudah kami terima!')}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#25D366;color:white;font-size:0.78rem;font-weight:700;padding:9px 14px;border-radius:11px;text-decoration:none;"><i class="fab fa-whatsapp"></i> WA Buyer</a>` : '';
             actionButtons = `
                 <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
@@ -1404,14 +1442,36 @@ function renderMenuList() {
         </div>`).join('');
 }
 
+// 🌟 FIX: Much stricter AI match logic so Nasi Padang does not match Nasi Goreng
 function checkMenuMatch(requestDescription) {
     const menu = getSellerMenu();
     if (!menu.length) return null;
+    
     const desc = requestDescription.toLowerCase();
+    
+    // Remove common prefixes so we only match the actual food name
+    let cleanDesc = desc.replace(/i want to eat |i want to buy |i want |buy |pesan |beli |order /gi, '').trim();
+
     const matches = menu.filter(item => {
-        const words = item.name.toLowerCase().split(/\s+/);
-        return words.some(w => w.length > 2 && desc.includes(w));
+        const itemName = item.name.toLowerCase();
+        
+        // 1. Direct inclusion (e.g. buyer says "nasi goreng", item is "nasi goreng spesial")
+        if (desc.includes(itemName) || (cleanDesc.length > 2 && itemName.includes(cleanDesc))) {
+            return true;
+        }
+        
+        // 2. Strict word overlap check
+        // Prevents "Nasi" from returning true when item is "Nasi Goreng" 
+        const itemWords = itemName.split(/\s+/).filter(w => w.length > 2);
+        if (itemWords.length > 0) {
+            // EVERY significant word in the menu item MUST be present in the buyer's request
+            const allWordsMatch = itemWords.every(w => desc.includes(w));
+            if (allWordsMatch) return true;
+        }
+        
+        return false;
     });
+    
     return matches.length ? matches : null;
 }
 
@@ -1425,7 +1485,7 @@ function showMenuMatchSuggestion(reqId, requestDescription, formEl) {
     banner.style.cssText = 'background:linear-gradient(135deg,#EFF6FF,#DBEAFE);border:1.5px solid #93C5FD;border-radius:12px;padding:12px;margin-bottom:10px;';
     banner.innerHTML = `
         <p style="font-size:0.72rem;font-weight:700;color:#1D4ED8;margin-bottom:6px;"><i class="fas fa-robot mr-1"></i>AI Match — Your menu has what they want!</p>
-        ${matches.map(m => `<button type="button" onclick="applyMenuMatch(${reqId}, '${m.name.replace(/'/g, "\\'")}', ${m.price})"
+        ${matches.map(m => `<button type="button" onclick="applyMenuMatch(${reqId}, '${m.name.replace(/'/g,"\\'")}', ${m.price})"
             style="background:#2563EB;color:white;font-size:0.72rem;font-weight:700;padding:4px 10px;border-radius:20px;border:none;cursor:pointer;margin:2px;display:inline-flex;align-items:center;gap:4px;">
             <i class="fas fa-bolt"></i> Use: ${m.name} (Rp ${parseInt(m.price).toLocaleString('id-ID')})
         </button>`).join('')}`;
